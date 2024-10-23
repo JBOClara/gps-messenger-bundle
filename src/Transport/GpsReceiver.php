@@ -12,6 +12,8 @@ use PetitPress\GpsMessengerBundle\Transport\Stamp\GpsReceivedStamp;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Exception\MessageDecodingFailedException;
 use Symfony\Component\Messenger\Exception\TransportException;
+use Symfony\Component\Messenger\Transport\Receiver\ListableReceiverInterface;
+use Symfony\Component\Messenger\Transport\Receiver\MessageCountAwareInterface;
 use Symfony\Component\Messenger\Transport\Receiver\ReceiverInterface;
 use Symfony\Component\Messenger\Transport\Serialization\SerializerInterface;
 use Throwable;
@@ -19,7 +21,7 @@ use Throwable;
 /**
  * @author Ronald Marfoldi <ronald.marfoldi@petitpress.sk>
  */
-final class GpsReceiver implements ReceiverInterface
+final class GpsReceiver implements ReceiverInterface, ListableReceiverInterface, MessageCountAwareInterface
 {
     private PubSubClient $pubSubClient;
     private GpsConfigurationInterface $gpsConfiguration;
@@ -65,8 +67,7 @@ final class GpsReceiver implements ReceiverInterface
 
             $this->pubSubClient
                 ->subscription($this->gpsConfiguration->getSubscriptionName())
-                ->acknowledge($gpsReceivedStamp->getGpsMessage())
-            ;
+                ->acknowledge($gpsReceivedStamp->getGpsMessage());
         } catch (Throwable $exception) {
             throw new TransportException($exception->getMessage(), 0, $exception);
         }
@@ -87,8 +88,52 @@ final class GpsReceiver implements ReceiverInterface
 
             $this->pubSubClient
                 ->subscription($this->gpsConfiguration->getSubscriptionName())
-                ->modifyAckDeadline($gpsReceivedStamp->getGpsMessage(), 0)
-            ;
+                ->modifyAckDeadline($gpsReceivedStamp->getGpsMessage(), 0);
+        } catch (Throwable $exception) {
+            throw new TransportException($exception->getMessage(), 0, $exception);
+        }
+    }
+
+    public function getMessageCount(): int
+    {
+        try {
+            $subscription = $this->pubSubClient->subscription($this->gpsConfiguration->getSubscriptionName());
+            $info = $subscription->info();
+            return $info['messageCount'] ?? 0;
+        } catch (Throwable $exception) {
+            throw new TransportException($exception->getMessage(), 0, $exception);
+        }
+    }
+
+    public function all(?int $limit = null): iterable
+    {
+        try {
+            $messages = $this->pubSubClient
+                ->subscription($this->gpsConfiguration->getSubscriptionName())
+                ->pull(['maxMessages' => $limit]);
+
+            foreach ($messages as $message) {
+                yield $this->createEnvelopeFromPubSubMessage($message);
+            }
+        } catch (Throwable $exception) {
+            throw new TransportException($exception->getMessage(), 0, $exception);
+        }
+    }
+
+    public function find(mixed $id): ?Envelope
+    {
+        try {
+            $messages = $this->pubSubClient
+                ->subscription($this->gpsConfiguration->getSubscriptionName())
+                ->pull();
+
+            foreach ($messages as $message) {
+                if ($message->id() === $id) {
+                    return $this->createEnvelopeFromPubSubMessage($message);
+                }
+            }
+
+            return null;
         } catch (Throwable $exception) {
             throw new TransportException($exception->getMessage(), 0, $exception);
         }
