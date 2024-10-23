@@ -9,11 +9,13 @@ use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Transport\Serialization\SerializerInterface;
 use Symfony\Component\Messenger\Transport\SetupableTransportInterface;
 use Symfony\Component\Messenger\Transport\TransportInterface;
+use Symfony\Component\Messenger\Transport\Receiver\MessageCountAwareInterface;
+use Symfony\Component\Messenger\Transport\Receiver\ListableReceiverInterface;
 
 /**
  * @author Ronald Marfoldi <ronald.marfoldi@petitpress.sk>
  */
-final class GpsTransport implements TransportInterface, SetupableTransportInterface
+final class GpsTransport implements TransportInterface, SetupableTransportInterface, MessageCountAwareInterface, ListableReceiverInterface
 {
     private PubSubClient $pubSubClient;
     private GpsConfigurationInterface $gpsConfiguration;
@@ -61,6 +63,30 @@ final class GpsTransport implements TransportInterface, SetupableTransportInterf
     public function send(Envelope $envelope): Envelope
     {
         return $this->getSender()->send($envelope);
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function getMessageCount(): int
+    {
+        return $this->getReceiver()->getMessageCount();
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function all(?int $limit = null): iterable
+    {
+        return $this->getReceiver()->all($limit);
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function find(mixed $id): ?Envelope
+    {
+        return $this->getReceiver()->find($id);
     }
 
     public function getReceiver(): GpsReceiver
